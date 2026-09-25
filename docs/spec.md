@@ -80,17 +80,16 @@ Also:
 
 On `Tensor<T, M, K>`:
 
-- `matmul<const N: int>(&self, other: &Tensor<T, K, N>) -> Result<Tensor<T, M, N>, ShapeError>`
+- `matmul<const N: int>(&self, other: &Tensor<T, K, N>) -> Tensor<T, M, N>`
   — `self` (M×K) times `other` (K×N); the inner dimension is proved equal
-  by the type, so this only fails when `M`, `K` or `N` is `Dyn` and the
-  run-time extents disagree.
+  by the type. **Panics** if `M`, `K` or `N` is `Dyn` and the run-time
+  extents disagree — the same panicking/checked split as `add`/`sub`/`mul`
+  above (changed from a `Result`-returning form so it can carry a
+  `#[derivative]`, which needs a plain return type); use `checked_matmul`
+  for the `Result` form.
 - `checked_matmul<const J: int, const N: int>(&self, other: &Tensor<T, J, N>) -> Result<Tensor<T, M, N>, ShapeError>`
   — `self` (M×K) times `other` (J×N) where `K` and `J` are not proved equal
   either; both are compared at run time.
-
-`matmul`/`checked_matmul` are not part of the operator-overload pair above:
-they take an extra output dimension (`N`) and already return a `Result` in
-both forms, so there is no separate panicking variant.
 
 ## `Dyn` semantics
 
@@ -100,6 +99,43 @@ disagree at run time if their `Dyn` extents came from different bindings.
 The `checked_*` methods and `matmul`/`concat` compare full shapes
 (`check_shape`) at run time and return `Err` on a mismatch; the plain
 operator forms (`add`/`sub`/`mul`) panic instead, via `ShapeError::display`.
+
+## `std::autodiff::Differentiable`
+
+`Tensor<T, D...>` satisfies `Differentiable` with `Tangent = Self`:
+`zero_tangent(&self) -> Self` (same shape, all zero) and
+`move_by(&mut self, offset: &Self)` (elementwise `+=`).
+
+`add`, `sub`, `mul`, `scale`, `sum` and `matmul` each carry a hand-written
+`#[derivative(of = ...)]`, so `std::autodiff::grad` differentiates through
+them without needing to unfold their loop bodies. `scale`'s gradient covers
+only its `Tensor` operand — the scale factor `k: T` is a bare generic
+parameter (`Type::Generic`, not `Type::Float`) at `scale`'s own generic
+signature, and the compiler's `#[derivative]` check (`is_differentiable_type`,
+`paco-types`) only ever treats a generic parameter as differentiable when a
+concrete float type has already been substituted for it, which never
+happens at a generic registration's own (unsubstituted) signature; `k`
+therefore gets no gradient, by construction, regardless of what `T` turns
+out to be at any call site.
+
+**Known compiler gap (not this library's code):** calling any method
+Tensor declares directly in its `struct` body (`at`, `shape`, `rank`, …)
+on a value `std::autodiff::grad` returned — the gradient of a `Tensor`-typed
+input, for any of the six registrations above — panics the compiler
+(`paco-driver/src/lowering.rs:141`, "no declaration found for generic
+method `Tensor::at`"), and calling a `methods<>`-block method on that same
+value (e.g. `.sum()`) fails to type-check (`PACO-E0314`, "method not
+found"). `grad` itself runs and returns correctly (confirmed: printing the
+scalar loss value works); only touching the *shape* of the returned
+gradient panics or fails. This reproduces even in the simplest single-input
+case and is unrelated to which of the six operations is differentiated —
+task 3.1c's own compiler-level test proved the method-form
+`#[derivative(of = f)]` registration only for a non-generic type (`Vec2`);
+the generic case (any `Tensor<T, D...>`) exercises a different, still-broken
+path in the MIR lowering / monomorphization pipeline. Until that is fixed,
+`grad` over `Tensor` cannot be exercised end to end (FD-checked or
+otherwise) — see the extraction change's tasks.md for the follow-up task
+this blocks.
 
 ## FP8 has no arithmetic
 

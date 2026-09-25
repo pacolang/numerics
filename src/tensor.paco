@@ -101,6 +101,7 @@ pub fn check_shape(expected: &[]i64, found: &[]i64) -> Result<i64, ShapeError> {
 pub struct Tensor<T: Numeric, const D: int...> {
     data: []T,
     dyn_dims: []i64,
+    type Tangent = Tensor<T, D...>;
 
     /// All zeros. Every `Dyn` dimension gets extent `0`.
     pub fn zeros() -> Self {
@@ -275,6 +276,148 @@ methods<T: Numeric + Add + Sub + Mul, const D: int...> Tensor<T, D...> {
         }
         acc
     }
+
+    /// `std::autodiff::Differentiable`: the tangent of a tensor is a tensor
+    /// of the same shape.
+    pub fn zero_tangent(&self) -> Tensor<T, D...> {
+        Tensor { data: slice_of_zeros<T>(self.data.len()), dyn_dims: copy_dims(&self.dyn_dims) }
+    }
+
+    pub fn move_by(&mut self, offset: &Tensor<T, D...>) {
+        for i in 0..self.data.len() {
+            self.data[i] = self.data[i] + offset.data[i]
+        }
+    }
+}
+
+/// `d(a + b)`: the gradient of each operand is the seed itself, so `b`'s
+/// gradient is a fresh copy of `a`'s (built from a moved-in `seed`, since a
+/// `Tensor` cannot be read after it is moved).
+struct AddPullback<T: Numeric + Add + Sub + Mul, const D: int...> {
+    type Seed = Tensor<T, D...>;
+    type Gradients = (Tensor<T, D...>, Tensor<T, D...>);
+
+    fn pullback(self, seed: Tensor<T, D...>) -> (Tensor<T, D...>, Tensor<T, D...>) {
+        let mut copy = slice_of_zeros<T>(seed.data.len());
+        for i in 0..seed.data.len() {
+            copy[i] = seed.data[i]
+        }
+        let other_grad = Tensor { data: copy, dyn_dims: copy_dims(&seed.dyn_dims) };
+        (seed, other_grad)
+    }
+}
+
+#[derivative(of = Tensor::add)]
+fn add_derivative<T: Numeric + Add + Sub + Mul, const D: int...>(a: Tensor<T, D...>, other: &Tensor<T, D...>) -> (Tensor<T, D...>, AddPullback<T, D...>) {
+    (a.add(other), AddPullback {})
+}
+
+/// `d(a - b)`: `a`'s gradient is the seed, `b`'s is the seed negated
+/// element-wise.
+struct SubPullback<T: Numeric + Add + Sub + Mul, const D: int...> {
+    type Seed = Tensor<T, D...>;
+    type Gradients = (Tensor<T, D...>, Tensor<T, D...>);
+
+    fn pullback(self, seed: Tensor<T, D...>) -> (Tensor<T, D...>, Tensor<T, D...>) {
+        let z = slice_of_zeros<T>(1)[0];
+        let mut neg = slice_of_zeros<T>(seed.data.len());
+        for i in 0..seed.data.len() {
+            neg[i] = z - seed.data[i]
+        }
+        let neg_t = Tensor { data: neg, dyn_dims: copy_dims(&seed.dyn_dims) };
+        (seed, neg_t)
+    }
+}
+
+#[derivative(of = Tensor::sub)]
+fn sub_derivative<T: Numeric + Add + Sub + Mul, const D: int...>(a: Tensor<T, D...>, other: &Tensor<T, D...>) -> (Tensor<T, D...>, SubPullback<T, D...>) {
+    (a.sub(other), SubPullback {})
+}
+
+/// `d(a * b)` (element-wise): `a`'s gradient is `seed * b`, `b`'s is
+/// `seed * a`. Both operands are kept, since the backward pass needs them.
+struct MulPullback<T: Numeric + Add + Sub + Mul, const D: int...> {
+    a: Tensor<T, D...>,
+    b: Tensor<T, D...>,
+    type Seed = Tensor<T, D...>;
+    type Gradients = (Tensor<T, D...>, Tensor<T, D...>);
+
+    fn pullback(self, seed: Tensor<T, D...>) -> (Tensor<T, D...>, Tensor<T, D...>) {
+        let mut grad_a = slice_of_zeros<T>(seed.data.len());
+        let mut grad_b = slice_of_zeros<T>(seed.data.len());
+        for i in 0..seed.data.len() {
+            grad_a[i] = seed.data[i] * self.b.data[i];
+            grad_b[i] = seed.data[i] * self.a.data[i]
+        }
+        (
+            Tensor { data: grad_a, dyn_dims: copy_dims(&seed.dyn_dims) },
+            Tensor { data: grad_b, dyn_dims: copy_dims(&seed.dyn_dims) },
+        )
+    }
+}
+
+#[derivative(of = Tensor::mul)]
+fn mul_derivative<T: Numeric + Add + Sub + Mul, const D: int...>(a: Tensor<T, D...>, other: &Tensor<T, D...>) -> (Tensor<T, D...>, MulPullback<T, D...>) {
+    let result = a.mul(other);
+    let mut b_copy = slice_of_zeros<T>(other.data.len());
+    for i in 0..other.data.len() {
+        b_copy[i] = other.data[i]
+    }
+    (result, MulPullback { a: a, b: Tensor { data: b_copy, dyn_dims: copy_dims(&other.dyn_dims) } })
+}
+
+/// `d(scale(a, k))`: the gradient of `a` is the seed scaled by `k`. `k` is a
+/// bare generic parameter (`Type::Generic`, not `Type::Float`), so the
+/// compiler's `#[derivative]` check never treats it as differentiable at
+/// this generic signature — `Gradients` therefore covers `a` alone, with no
+/// gradient reported for `k` itself. See docs/spec.md for detail.
+struct ScalePullback<T: Numeric + Add + Sub + Mul, const D: int...> {
+    k: T,
+    type Seed = Tensor<T, D...>;
+    type Gradients = Tensor<T, D...>;
+
+    fn pullback(self, seed: Tensor<T, D...>) -> Tensor<T, D...> {
+        let mut out = slice_of_zeros<T>(seed.data.len());
+        for i in 0..seed.data.len() {
+            out[i] = seed.data[i] * self.k
+        }
+        Tensor { data: out, dyn_dims: copy_dims(&seed.dyn_dims) }
+    }
+}
+
+#[derivative(of = Tensor::scale)]
+fn scale_derivative<T: Numeric + Add + Sub + Mul, const D: int...>(t: Tensor<T, D...>, k: T) -> (Tensor<T, D...>, ScalePullback<T, D...>) {
+    let mut out = slice_of_zeros<T>(t.data.len());
+    for i in 0..t.data.len() {
+        out[i] = t.data[i] * k
+    }
+    (Tensor { data: out, dyn_dims: copy_dims(&t.dyn_dims) }, ScalePullback { k: k })
+}
+
+/// `d(sum(a))`: the gradient contribution is a tensor of `a`'s shape, every
+/// element equal to the scalar seed (broadcast).
+struct SumPullback<T: Numeric + Add + Sub + Mul, const D: int...> {
+    len: i64,
+    dyn_dims: []i64,
+    type Seed = T;
+    type Gradients = Tensor<T, D...>;
+
+    fn pullback(self, seed: T) -> Tensor<T, D...> {
+        let z = slice_of_zeros<T>(1)[0];
+        let mut data = slice_of_zeros<T>(self.len);
+        for i in 0..self.len {
+            data[i] = seed + z
+        }
+        Tensor { data: data, dyn_dims: self.dyn_dims }
+    }
+}
+
+#[derivative(of = Tensor::sum)]
+fn sum_derivative<T: Numeric + Add + Sub + Mul, const D: int...>(t: Tensor<T, D...>) -> (T, SumPullback<T, D...>) {
+    let value = t.sum();
+    let len = t.data.len();
+    let dyn_dims = copy_dims(&t.dyn_dims);
+    (value, SumPullback { len: len, dyn_dims: dyn_dims })
 }
 
 methods<T: Numeric, const R: int...> Tensor<T, Dyn, R...> {
@@ -309,9 +452,17 @@ methods<T: Numeric, const R: int...> Tensor<T, Dyn, R...> {
 
 methods<T: Numeric + Add + Mul, const M: int, const K: int> Tensor<T, M, K> {
     /// `self` (M×K) times `other` (K×N); the inner dimensions are proved
-    /// equal by the type.
-    pub fn matmul<const N: int>(&self, other: &Tensor<T, K, N>) -> Result<Tensor<T, M, N>, ShapeError> {
-        self.checked_matmul(other)
+    /// equal by the type. Panics if a `Dyn` dimension disagrees at run
+    /// time; use `checked_matmul` to get a `Result` instead. (Renamed from
+    /// the `Result`-returning form `checked_matmul` already fully
+    /// subsumes, mirroring `add`/`sub`/`mul`'s own checked/panicking
+    /// split — `#[derivative(of = f)]` needs a plain, non-`Result`
+    /// return type to differentiate.)
+    pub fn matmul<const N: int>(&self, other: &Tensor<T, K, N>) -> Tensor<T, M, N> {
+        match self.checked_matmul(other) {
+            Result::Ok(t) => t,
+            Result::Err(e) => panic(e.display()),
+        }
     }
 
     /// `self` (M×K) times `other` (J×N) where `K` and `J` are not proved
@@ -345,4 +496,58 @@ methods<T: Numeric + Add + Mul, const M: int, const K: int> Tensor<T, M, K> {
         }
         Tensor<T, M, N>::from_slice(data, dyn_dims)
     }
+}
+
+/// `d(matmul(a, b))`: `grad_a = seed @ b^T`, `grad_b = a^T @ seed`, written
+/// as plain loops (no `transpose` method exists on `Tensor` to call — that
+/// would need `math::Matrix`, which depends on `tensor`, never the other
+/// way). `grad_a`/`grad_b` share `a`/`b`'s own shape, so their `dyn_dims`
+/// are simply copied from the kept operands rather than recomputed.
+struct MatmulPullback<T: Numeric + Add + Mul, const M: int, const K: int, const N: int> {
+    a: Tensor<T, M, K>,
+    b: Tensor<T, K, N>,
+    type Seed = Tensor<T, M, N>;
+    type Gradients = (Tensor<T, M, K>, Tensor<T, K, N>);
+
+    fn pullback(self, seed: Tensor<T, M, N>) -> (Tensor<T, M, K>, Tensor<T, K, N>) {
+        let a_shape = self.a.shape();
+        let b_shape = self.b.shape();
+        let rows = a_shape[0];
+        let inner = a_shape[1];
+        let cols = b_shape[1];
+        let mut grad_a = slice_of_zeros<T>(rows * inner);
+        for r in 0..rows {
+            for k in 0..inner {
+                let mut acc = grad_a[r * inner + k];
+                for c in 0..cols {
+                    acc = acc + seed.data[r * cols + c] * self.b.data[k * cols + c]
+                }
+                grad_a[r * inner + k] = acc
+            }
+        }
+        let mut grad_b = slice_of_zeros<T>(inner * cols);
+        for k in 0..inner {
+            for c in 0..cols {
+                let mut acc = grad_b[k * cols + c];
+                for r in 0..rows {
+                    acc = acc + self.a.data[r * inner + k] * seed.data[r * cols + c]
+                }
+                grad_b[k * cols + c] = acc
+            }
+        }
+        (
+            Tensor<T, M, K> { data: grad_a, dyn_dims: copy_dims(&self.a.dyn_dims) },
+            Tensor<T, K, N> { data: grad_b, dyn_dims: copy_dims(&self.b.dyn_dims) },
+        )
+    }
+}
+
+#[derivative(of = Tensor::matmul)]
+fn matmul_derivative<T: Numeric + Add + Mul, const M: int, const K: int, const N: int>(a: Tensor<T, M, K>, other: &Tensor<T, K, N>) -> (Tensor<T, M, N>, MatmulPullback<T, M, K, N>) {
+    let result = a.matmul(other);
+    let mut b_copy = slice_of_zeros<T>(other.data.len());
+    for i in 0..other.data.len() {
+        b_copy[i] = other.data[i]
+    }
+    (result, MatmulPullback { a: a, b: Tensor { data: b_copy, dyn_dims: copy_dims(&other.dyn_dims) } })
 }
