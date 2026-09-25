@@ -1,4 +1,4 @@
-module numerics;
+module tensor;
 
 /// A disagreement between run-time extents. `axis` is the dimension that
 /// disagreed, or `-1` when the element count or the number of `Dyn`
@@ -7,6 +7,13 @@ pub struct ShapeError {
     pub axis: i64,
     pub expected: i64,
     pub found: i64,
+
+    pub fn display(&self) -> string {
+        let axis = self.axis.display();
+        let expected = self.expected.display();
+        let found = self.found.display();
+        string_concat(&"shape mismatch at axis ", &string_concat(&axis, &string_concat(&": expected extent ", &string_concat(&expected, &string_concat(&", found ", &found)))))
+    }
 }
 
 pub fn dims0() -> []i64 {
@@ -192,8 +199,13 @@ pub struct Tensor<T: Numeric, const D: int...> {
 }
 
 methods<T: Numeric + Add + Sub + Mul, const D: int...> Tensor<T, D...> {
-    pub fn add(&self, other: &Self) -> Result<Self, ShapeError> {
-        self.checked_add(other)
+    /// Element-wise `+`. Panics if the shapes disagree at run time; use
+    /// `checked_add` to get a `Result` instead.
+    pub fn add(&self, other: &Self) -> Self {
+        match self.checked_add(other) {
+            Result::Ok(t) => t,
+            Result::Err(e) => panic(e.display()),
+        }
     }
 
     /// Element-wise `+` on operands whose shapes are not proved equal; the
@@ -207,8 +219,13 @@ methods<T: Numeric + Add + Sub + Mul, const D: int...> Tensor<T, D...> {
         Result::Ok(Tensor { data: out, dyn_dims: copy_dims(&self.dyn_dims) })
     }
 
-    pub fn sub(&self, other: &Self) -> Result<Self, ShapeError> {
-        self.checked_sub(other)
+    /// Element-wise `-`. Panics if the shapes disagree at run time; use
+    /// `checked_sub` to get a `Result` instead.
+    pub fn sub(&self, other: &Self) -> Self {
+        match self.checked_sub(other) {
+            Result::Ok(t) => t,
+            Result::Err(e) => panic(e.display()),
+        }
     }
 
     /// Element-wise `-` on operands whose shapes are not proved equal; the
@@ -222,8 +239,13 @@ methods<T: Numeric + Add + Sub + Mul, const D: int...> Tensor<T, D...> {
         Result::Ok(Tensor { data: out, dyn_dims: copy_dims(&self.dyn_dims) })
     }
 
-    pub fn mul(&self, other: &Self) -> Result<Self, ShapeError> {
-        self.checked_mul(other)
+    /// Element-wise `*`. Panics if the shapes disagree at run time; use
+    /// `checked_mul` to get a `Result` instead.
+    pub fn mul(&self, other: &Self) -> Self {
+        match self.checked_mul(other) {
+            Result::Ok(t) => t,
+            Result::Err(e) => panic(e.display()),
+        }
     }
 
     /// Element-wise `*` on operands whose shapes are not proved equal; the
