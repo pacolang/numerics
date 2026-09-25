@@ -1,4 +1,4 @@
-use github.com/pacolang/numerics/tensor;
+use tensor;
 
 fn report(r: Result<tensor::Tensor<f32, Dyn, 3>, tensor::ShapeError>) {
     match r {

@@ -1,4 +1,4 @@
-use github.com/pacolang/numerics/tensor;
+use tensor;
 
 fn scaled(x: float) -> i64 {
     (x * 1048576.0) as i64

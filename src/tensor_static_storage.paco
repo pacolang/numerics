@@ -1,4 +1,4 @@
-use github.com/pacolang/numerics/tensor;
+use tensor;
 
 fn show(t: &tensor::Tensor<i64, 2, 3>) {
     for i in 0..t.len() {

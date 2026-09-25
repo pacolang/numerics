@@ -1,4 +1,4 @@
-use github.com/pacolang/numerics/tensor;
+use tensor;
 
 // Batch is dynamic, features are static — the shape of every real model.
 fn forward(
