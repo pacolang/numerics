@@ -1,36 +1,36 @@
 module math;
 
-use std::numerics;
+use tensor;
 
 /// A dense row-major matrix whose dimensions are part of its type:
 /// `Matrix<float, 2, 3>`. Operands whose `Dyn` dimensions are not proved
 /// equal go through the `checked_*` operations, which return `Err` on a mismatch.
 pub struct Matrix<T: Numeric, const R: int, const C: int> {
-    t: numerics::Tensor<T, R, C>,
+    t: tensor::Tensor<T, R, C>,
 
     /// All zeros. A `Dyn` dimension gets extent `0`; use `with_shape`.
     pub fn zeros() -> Self {
-        Matrix { t: numerics::Tensor<T, R, C>::zeros() }
+        Matrix { t: tensor::Tensor<T, R, C>::zeros() }
     }
 
     /// All zeros with the given extents, which must match every static
     /// dimension; they fill in the `Dyn` ones.
-    pub fn with_shape(rows: i64, cols: i64) -> Result<Self, numerics::ShapeError> {
+    pub fn with_shape(rows: i64, cols: i64) -> Result<Self, tensor::ShapeError> {
         if R >= 0 && R != rows {
-            return Result::Err(numerics::ShapeError { axis: 0, expected: R, found: rows })
+            return Result::Err(tensor::ShapeError { axis: 0, expected: R, found: rows })
         }
         if C >= 0 && C != cols {
-            return Result::Err(numerics::ShapeError { axis: 1, expected: C, found: cols })
+            return Result::Err(tensor::ShapeError { axis: 1, expected: C, found: cols })
         }
-        let mut dyn_dims = numerics::dims0();
+        let mut dyn_dims = tensor::dims0();
         if R < 0 && C < 0 {
-            dyn_dims = numerics::dims2(rows, cols)
+            dyn_dims = tensor::dims2(rows, cols)
         } else if R < 0 {
-            dyn_dims = numerics::dims1(rows)
+            dyn_dims = tensor::dims1(rows)
         } else if C < 0 {
-            dyn_dims = numerics::dims1(cols)
+            dyn_dims = tensor::dims1(cols)
         }
-        match numerics::Tensor<T, R, C>::zeros_with(dyn_dims) {
+        match tensor::Tensor<T, R, C>::zeros_with(dyn_dims) {
             Result::Ok(t) => Result::Ok(Matrix { t: t }),
             Result::Err(e) => Result::Err(e),
         }
@@ -61,24 +61,24 @@ pub struct Matrix<T: Numeric, const R: int, const C: int> {
         self.t.data_mut()
     }
 
-    pub fn tensor(&self) -> &numerics::Tensor<T, R, C> {
+    pub fn tensor(&self) -> &tensor::Tensor<T, R, C> {
         &self.t
     }
 
     pub fn transpose(&self) -> Matrix<T, C, R> {
         let rows = self.rows();
         let cols = self.cols();
-        let mut out = numerics::Tensor<T, C, R>::zeros();
+        let mut out = tensor::Tensor<T, C, R>::zeros();
         if R < 0 || C < 0 {
-            let mut dyn_dims = numerics::dims0();
+            let mut dyn_dims = tensor::dims0();
             if R < 0 && C < 0 {
-                dyn_dims = numerics::dims2(cols, rows)
+                dyn_dims = tensor::dims2(cols, rows)
             } else if R < 0 {
-                dyn_dims = numerics::dims1(rows)
+                dyn_dims = tensor::dims1(rows)
             } else {
-                dyn_dims = numerics::dims1(cols)
+                dyn_dims = tensor::dims1(cols)
             }
-            match numerics::Tensor<T, C, R>::zeros_with(dyn_dims) {
+            match tensor::Tensor<T, C, R>::zeros_with(dyn_dims) {
                 Result::Ok(t) => out = t,
                 Result::Err(e) => {}
             }
@@ -102,26 +102,26 @@ methods<T: Numeric + Add + Sub + Mul, const R: int, const C: int> Matrix<T, R, C
         out
     }
 
-    pub fn add(&self, other: &Self) -> Result<Self, numerics::ShapeError> {
+    pub fn add(&self, other: &Self) -> Result<Self, tensor::ShapeError> {
         self.checked_add(other)
     }
 
     /// Element-wise `+` on matrices whose shapes are not proved equal; the
     /// shapes are compared at run time.
-    pub fn checked_add<const R2: int, const C2: int>(&self, other: &Matrix<T, R2, C2>) -> Result<Self, numerics::ShapeError> {
+    pub fn checked_add<const R2: int, const C2: int>(&self, other: &Matrix<T, R2, C2>) -> Result<Self, tensor::ShapeError> {
         match self.t.checked_add(&other.t) {
             Result::Ok(t) => Result::Ok(Matrix { t: t }),
             Result::Err(e) => Result::Err(e),
         }
     }
 
-    pub fn sub(&self, other: &Self) -> Result<Self, numerics::ShapeError> {
+    pub fn sub(&self, other: &Self) -> Result<Self, tensor::ShapeError> {
         self.checked_sub(other)
     }
 
     /// Element-wise `-` on matrices whose shapes are not proved equal; the
     /// shapes are compared at run time.
-    pub fn checked_sub<const R2: int, const C2: int>(&self, other: &Matrix<T, R2, C2>) -> Result<Self, numerics::ShapeError> {
+    pub fn checked_sub<const R2: int, const C2: int>(&self, other: &Matrix<T, R2, C2>) -> Result<Self, tensor::ShapeError> {
         match self.t.checked_sub(&other.t) {
             Result::Ok(t) => Result::Ok(Matrix { t: t }),
             Result::Err(e) => Result::Err(e),
@@ -129,13 +129,13 @@ methods<T: Numeric + Add + Sub + Mul, const R: int, const C: int> Matrix<T, R, C
     }
 
     /// `self` (R×C) times `other` (C×N): the inner dimensions agree by type.
-    pub fn mul<const N: int>(&self, other: &Matrix<T, C, N>) -> Result<Matrix<T, R, N>, numerics::ShapeError> {
+    pub fn mul<const N: int>(&self, other: &Matrix<T, C, N>) -> Result<Matrix<T, R, N>, tensor::ShapeError> {
         self.checked_mul(other)
     }
 
     /// `self` (R×C) times `other` (J×N) where `C` and `J` are not proved
     /// equal; they are compared at run time.
-    pub fn checked_mul<const J: int, const N: int>(&self, other: &Matrix<T, J, N>) -> Result<Matrix<T, R, N>, numerics::ShapeError> {
+    pub fn checked_mul<const J: int, const N: int>(&self, other: &Matrix<T, J, N>) -> Result<Matrix<T, R, N>, tensor::ShapeError> {
         match self.t.checked_matmul(&other.t) {
             Result::Ok(t) => Result::Ok(Matrix { t: t }),
             Result::Err(e) => Result::Err(e),
