@@ -1,0 +1,46 @@
+use math;
+use std::test;
+
+#[derive(Schema)]
+struct LogRow {
+    timestamp: i64,
+    level: string,
+    message: string,
+}
+
+fn sample_frame() -> math::DataFrame<LogRow> {
+    let mut df = math::DataFrame<LogRow>::new();
+    df.push(LogRow { timestamp: 1_000, level: "INFO", message: "started" });
+    df.push(LogRow { timestamp: 2_000, level: "WARN", message: "slow" });
+    df
+}
+
+#[test]
+fn push_and_len_track_the_number_of_rows() {
+    let df = sample_frame();
+    test::assert_eq(df.len(), 2, "two rows were pushed");
+}
+
+#[test]
+fn row_returns_the_row_at_an_index() {
+    let df = sample_frame();
+    match df.row(0) {
+        Some(row) => test::assert_eq(row.timestamp, 1_000, "row 0 is the first pushed row"),
+        None => panic("expected row(0) to be Some"),
+    }
+    match df.row(2) {
+        Some(_) => panic("expected row(2) to be None: only two rows were pushed"),
+        None => {}
+    }
+}
+
+#[test]
+fn derive_schema_generates_one_column_accessor_per_field() {
+    let df = sample_frame();
+    let timestamps: Vec<i64> = LogRow::timestamp(&df);
+    let levels: Vec<string> = LogRow::level(&df);
+    let messages: Vec<string> = LogRow::message(&df);
+    test::assert_eq(timestamps[0] + timestamps[1], 3_000, "both rows' timestamps, summed");
+    test::assert_eq(levels[1], "WARN", "the second row's level column");
+    test::assert_eq(messages[0], "started", "the first row's message column");
+}
