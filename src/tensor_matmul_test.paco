@@ -1,0 +1,63 @@
+use tensor;
+use std::test;
+
+// Batch is dynamic, features are static — the shape of every real model.
+fn forward(
+    x: &tensor::Tensor<f32, Dyn, 3>,
+    w: &tensor::Tensor<f32, 3, 2>,
+) -> Result<tensor::Tensor<f32, Dyn, 2>, tensor::ShapeError> {
+    x.matmul(w)
+}
+
+#[test]
+fn matmul_of_a_dyn_batch_by_a_static_weight_matrix() {
+    let mut w = tensor::Tensor<f32, 3, 2>::zeros();
+    let half: f32 = 0.5;
+    let two: f32 = 2.0;
+    w.set(tensor::dims2(0, 0), half);
+    w.set(tensor::dims2(2, 1), two);
+    match tensor::Tensor<f32, Dyn, 3>::zeros_with(tensor::dims1(2)) {
+        Result::Ok(x0) => {
+            let mut x = x0;
+            let four: f32 = 4.0;
+            let three: f32 = 3.0;
+            x.set(tensor::dims2(0, 0), four);
+            x.set(tensor::dims2(1, 2), three);
+            match forward(&x, &w) {
+                Result::Ok(y) => {
+                    let y0: f32 = 2.0;
+                    let y1: f32 = 0.0;
+                    let y2: f32 = 0.0;
+                    let y3: f32 = 6.0;
+                    test::assert_eq(y.rank(), 2, "matmul result rank");
+                    test::assert_eq(y.shape()[0], 2, "matmul result keeps the dynamic batch size");
+                    test::assert_eq(y.shape()[1], 2, "matmul result takes the weight matrix's output width");
+                    test::assert_eq(y.at(0), y0, "row 0, col 0: 4.0 * 0.5");
+                    test::assert_eq(y.at(1), y1, "row 0, col 1: no contributing term is set");
+                    test::assert_eq(y.at(2), y2, "row 1, col 0: no contributing term is set");
+                    test::assert_eq(y.at(3), y3, "row 1, col 1: 3.0 * 2.0");
+                }
+                Result::Err(_) => panic("expected forward's matmul to succeed"),
+            }
+        }
+        Result::Err(_) => panic("expected zeros_with(dims1(2)) to succeed"),
+    }
+}
+
+#[test]
+fn matmul_of_two_static_square_tensors() {
+    let mut a = tensor::Tensor<i64, 2, 2>::zeros();
+    a.set_at(0, 1);
+    a.set_at(1, 2);
+    a.set_at(2, 3);
+    a.set_at(3, 4);
+    match a.matmul(&a) {
+        Result::Ok(p) => {
+            test::assert_eq(p.at(0), 7, "row 0, col 0 of [[1,2],[3,4]] * itself");
+            test::assert_eq(p.at(1), 10, "row 0, col 1 of [[1,2],[3,4]] * itself");
+            test::assert_eq(p.at(2), 15, "row 1, col 0 of [[1,2],[3,4]] * itself");
+            test::assert_eq(p.at(3), 22, "row 1, col 1 of [[1,2],[3,4]] * itself");
+        }
+        Result::Err(_) => panic("expected matmul of two square tensors to succeed"),
+    }
+}

@@ -1,0 +1,58 @@
+use tensor;
+use std::test;
+
+fn scaled(x: float) -> i64 {
+    (x * 1048576.0) as i64
+}
+
+fn sample() -> tensor::Tensor<f32, 2> {
+    let mut a = tensor::Tensor<f32, 2>::zeros();
+    let tenth: f32 = 0.1;
+    let big: f32 = 70000.0;
+    a.set_at(0, tenth);
+    a.set_at(1, big);
+    a
+}
+
+#[test]
+fn cast_to_bf16_rounds_to_nearest() {
+    let a = sample();
+    let b = tensor::Tensor<bf16, 2>::cast(&a);
+    test::assert_eq(scaled(b.at(0) as float), 104960, "bf16 cast of 0.1 rounds to the nearest bf16 value");
+}
+
+#[test]
+fn cast_to_f16_rounds_to_nearest() {
+    let a = sample();
+    let h = tensor::Tensor<f16, 2>::cast(&a);
+    test::assert_eq(scaled(h.at(0) as float), 104832, "f16 cast of 0.1 rounds to the nearest f16 value");
+}
+
+#[test]
+fn cast_to_f16_overflow_becomes_infinity() {
+    let a = sample();
+    let h = tensor::Tensor<f16, 2>::cast(&a);
+    test::assert_true((h.at(1) as float) > 1000000.0, "70000.0 overflows f16's range and casts to infinity");
+}
+
+#[test]
+fn cast_to_f8e4m3_rounds_to_nearest() {
+    let a = sample();
+    let q = tensor::Tensor<f8e4m3, 2>::cast(&a);
+    test::assert_eq(scaled(q.at(0) as float), 106496, "f8e4m3 cast of 0.1 rounds to the nearest f8e4m3 value");
+}
+
+#[test]
+fn cast_round_trip_f32_to_bf16_and_back_preserves_the_rounded_value() {
+    let a = sample();
+    let b = tensor::Tensor<bf16, 2>::cast(&a);
+    let back = tensor::Tensor<f32, 2>::cast(&b);
+    test::assert_eq(scaled(back.at(0) as float), 104960, "casting bf16 back to f32 keeps bf16's rounded bits");
+}
+
+#[test]
+fn cast_float_to_integer_truncates() {
+    let a = sample();
+    let ints = tensor::Tensor<i64, 2>::cast(&a);
+    test::assert_eq(ints.at(1), 70000, "casting 70000.0 to i64 truncates to 70000");
+}

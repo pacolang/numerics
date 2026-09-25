@@ -1,0 +1,67 @@
+use tensor;
+use std::test;
+
+fn sample_a() -> tensor::Tensor<f32, 2, 2> {
+    let a1: f32 = 1.0;
+    let a2: f32 = 2.0;
+    let a3: f32 = 3.0;
+    let a4: f32 = 4.0;
+    let mut a = tensor::Tensor<f32, 2, 2>::zeros();
+    a.set_at(0, a1);
+    a.set_at(1, a2);
+    a.set_at(2, a3);
+    a.set_at(3, a4);
+    a
+}
+
+fn sample_b() -> tensor::Tensor<f32, 2, 2> {
+    let b1: f32 = 10.0;
+    let b2: f32 = 20.0;
+    let b3: f32 = 30.0;
+    let b4: f32 = 40.0;
+    let mut b = tensor::Tensor<f32, 2, 2>::zeros();
+    b.set_at(0, b1);
+    b.set_at(1, b2);
+    b.set_at(2, b3);
+    b.set_at(3, b4);
+    b
+}
+
+#[test]
+fn add_operator_is_elementwise() {
+    let sum = sample_a() + sample_b();
+    let e0: f32 = 11.0;
+    let e1: f32 = 22.0;
+    let e2: f32 = 33.0;
+    let e3: f32 = 44.0;
+    test::assert_eq(sum.at(0), e0, "1.0 + 10.0");
+    test::assert_eq(sum.at(1), e1, "2.0 + 20.0");
+    test::assert_eq(sum.at(2), e2, "3.0 + 30.0");
+    test::assert_eq(sum.at(3), e3, "4.0 + 40.0");
+}
+
+#[test]
+fn sub_operator_is_elementwise() {
+    let diff = sample_b() - sample_a();
+    let e0: f32 = 9.0;
+    let e1: f32 = 18.0;
+    let e2: f32 = 27.0;
+    let e3: f32 = 36.0;
+    test::assert_eq(diff.at(0), e0, "10.0 - 1.0");
+    test::assert_eq(diff.at(1), e1, "20.0 - 2.0");
+    test::assert_eq(diff.at(2), e2, "30.0 - 3.0");
+    test::assert_eq(diff.at(3), e3, "40.0 - 4.0");
+}
+
+#[test]
+fn mul_operator_is_elementwise() {
+    let prod = sample_a() * sample_b();
+    let e0: f32 = 10.0;
+    let e1: f32 = 40.0;
+    let e2: f32 = 90.0;
+    let e3: f32 = 160.0;
+    test::assert_eq(prod.at(0), e0, "1.0 * 10.0");
+    test::assert_eq(prod.at(1), e1, "2.0 * 20.0");
+    test::assert_eq(prod.at(2), e2, "3.0 * 30.0");
+    test::assert_eq(prod.at(3), e3, "4.0 * 40.0");
+}

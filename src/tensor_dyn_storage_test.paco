@@ -1,0 +1,78 @@
+use tensor;
+use std::test;
+
+fn batch(n: i64) -> Result<tensor::Tensor<f32, Dyn, 3>, tensor::ShapeError> {
+    tensor::Tensor<f32, Dyn, 3>::zeros_with(tensor::dims1(n))
+}
+
+#[test]
+fn dyn_batch_tensor_reports_rank_and_dyn_dim_count() {
+    match batch(2) {
+        Result::Ok(a) => {
+            test::assert_eq(a.rank(), 2, "a Dyn-batch, 3-feature tensor has rank 2");
+            test::assert_eq(a.dyn_dims().len(), 1, "only the batch dimension is dynamic");
+        }
+        Result::Err(_) => panic("expected zeros_with(dims1(2)) to succeed"),
+    }
+}
+
+#[test]
+fn checked_add_of_matching_dyn_batch_sizes_succeeds() {
+    match batch(2) {
+        Result::Ok(a) => match a.checked_add(&a) {
+            Result::Ok(t) => {
+                test::assert_eq(t.shape()[0], 2, "sum keeps the batch dimension");
+                test::assert_eq(t.len(), 6, "sum keeps the element count");
+            }
+            Result::Err(_) => panic("expected checked_add of matching shapes to succeed"),
+        },
+        Result::Err(_) => panic("expected zeros_with(dims1(2)) to succeed"),
+    }
+}
+
+#[test]
+fn checked_add_of_mismatched_dyn_batch_sizes_fails_with_shape_error() {
+    match batch(2) {
+        Result::Ok(a) => match batch(4) {
+            Result::Ok(b) => match a.checked_add(&b) {
+                Result::Ok(_) => panic("expected mismatched batch sizes to fail"),
+                Result::Err(e) => {
+                    test::assert_eq(e.axis, 0, "the batch axis is where the shapes disagree");
+                    test::assert_eq(e.expected, 2, "a's batch size");
+                    test::assert_eq(e.found, 4, "b's batch size");
+                }
+            },
+            Result::Err(_) => panic("expected zeros_with(dims1(4)) to succeed"),
+        },
+        Result::Err(_) => panic("expected zeros_with(dims1(2)) to succeed"),
+    }
+}
+
+#[test]
+fn concat_along_the_dyn_batch_axis_combines_both_batches() {
+    match batch(2) {
+        Result::Ok(a) => match batch(4) {
+            Result::Ok(b) => match a.concat(&b) {
+                Result::Ok(t) => {
+                    test::assert_eq(t.shape()[0], 6, "concat sums the batch dimension");
+                    test::assert_eq(t.len(), 18, "concat sums the element count");
+                }
+                Result::Err(_) => panic("expected concat to succeed"),
+            },
+            Result::Err(_) => panic("expected zeros_with(dims1(4)) to succeed"),
+        },
+        Result::Err(_) => panic("expected zeros_with(dims1(2)) to succeed"),
+    }
+}
+
+#[test]
+fn zeros_with_the_wrong_number_of_dyn_dims_fails_with_shape_error() {
+    match tensor::Tensor<f32, Dyn, 3>::zeros_with(tensor::dims0()) {
+        Result::Ok(_) => panic("expected zeros_with(dims0()) to fail: one Dyn dimension is required"),
+        Result::Err(e) => {
+            test::assert_eq(e.axis, -1, "a dim-count mismatch has no single axis");
+            test::assert_eq(e.expected, 1, "one dynamic dimension is expected");
+            test::assert_eq(e.found, 0, "zero dynamic dimensions were given");
+        }
+    }
+}
