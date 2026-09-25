@@ -118,24 +118,23 @@ happens at a generic registration's own (unsubstituted) signature; `k`
 therefore gets no gradient, by construction, regardless of what `T` turns
 out to be at any call site.
 
-**Known compiler gap (not this library's code):** calling any method
-Tensor declares directly in its `struct` body (`at`, `shape`, `rank`, …)
-on a value `std::autodiff::grad` returned — the gradient of a `Tensor`-typed
-input, for any of the six registrations above — panics the compiler
-(`paco-driver/src/lowering.rs:141`, "no declaration found for generic
-method `Tensor::at`"), and calling a `methods<>`-block method on that same
-value (e.g. `.sum()`) fails to type-check (`PACO-E0314`, "method not
-found"). `grad` itself runs and returns correctly (confirmed: printing the
-scalar loss value works); only touching the *shape* of the returned
-gradient panics or fails. This reproduces even in the simplest single-input
-case and is unrelated to which of the six operations is differentiated —
-task 3.1c's own compiler-level test proved the method-form
-`#[derivative(of = f)]` registration only for a non-generic type (`Vec2`);
-the generic case (any `Tensor<T, D...>`) exercises a different, still-broken
-path in the MIR lowering / monomorphization pipeline. Until that is fixed,
-`grad` over `Tensor` cannot be exercised end to end (FD-checked or
-otherwise) — see the extraction change's tasks.md for the follow-up task
-this blocks.
+**Known compiler gap (not this library's code):** task 3.2a fixed calling a
+method on a `grad`-returned gradient for a generic differentiable struct
+with a *single* `#[derivative(of = ...)]` registration, or with several
+registrations used from the module that declares the struct. `Tensor` has
+six registrations (`add`, `sub`, `mul`, `scale`, `sum`, `matmul`) and, being
+a library, is always used from a different module than the one that
+declares it — and that combination is still broken: calling *any* method on
+a `grad`-returned `Tensor` gradient, including a plain struct-body one like
+`at`, panics the compiler outright (`paco-driver/src/lowering.rs:141`, "no
+declaration found for generic method `Tensor::at`") rather than failing to
+type-check. `grad` itself runs and returns correctly (confirmed: printing
+the scalar loss value works); only touching the *gradient*'s contents
+panics. This reproduces independent of `Tensor`, in the simplest
+single-input case, with any number of static or `Dyn` dimensions — see
+task 3.2d in the extraction change's tasks.md, which this blocks, for the
+minimal repro. Until that is fixed, `grad` over `Tensor` cannot be
+exercised end to end (FD-checked or otherwise).
 
 ## FP8 has no arithmetic
 
