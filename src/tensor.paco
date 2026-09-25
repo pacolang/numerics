@@ -155,6 +155,12 @@ pub struct Tensor<T: Numeric, const D: int...> {
         full_shape(&dims, &self.dyn_dims)
     }
 
+    /// `std::dims::Shaped`: the real extent of axis `axis`, whether static
+    /// or `Dyn`.
+    pub fn extent(&self, axis: i64) -> i64 {
+        self.shape()[axis]
+    }
+
     pub fn len(&self) -> i64 {
         self.data.len()
     }
