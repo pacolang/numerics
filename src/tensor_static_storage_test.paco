@@ -1,0 +1,72 @@
+use tensor;
+use std::test;
+
+fn sample() -> tensor::Tensor<i64, 2, 3> {
+    let mut a = tensor::Tensor<i64, 2, 3>::zeros();
+    a.set(tensor::dims2(0, 1), 5);
+    a.set(tensor::dims2(1, 2), 7);
+    a
+}
+
+#[test]
+fn static_tensor_reports_rank_len_and_zero_dyn_dims() {
+    let a = sample();
+    test::assert_eq(a.rank(), 2, "a Tensor<i64, 2, 3> has rank 2");
+    test::assert_eq(a.len(), 6, "a 2x3 tensor holds 6 elements");
+    test::assert_eq(a.dyn_dims().len(), 0, "every dimension is static");
+}
+
+#[test]
+fn set_and_get_round_trip_and_offset_matches_row_major_layout() {
+    let a = sample();
+    test::assert_eq(a.get(tensor::dims2(1, 2)), 7, "get reads back what set wrote");
+    test::assert_eq(a.offset(&tensor::dims2(1, 2)), 5, "row-major offset for (1, 2) in a 2x3 tensor");
+}
+
+#[test]
+fn from_slice_builds_a_tensor_matching_the_slice_in_row_major_order() {
+    let mut data = slice_of_zeros<i64>(6);
+    for i in 0..6 {
+        data[i] = i * 10
+    }
+    match tensor::Tensor<i64, 2, 3>::from_slice(data, tensor::dims0()) {
+        Result::Ok(b) => {
+            test::assert_eq(b.get(tensor::dims2(1, 0)), 30, "row-major offset 3 holds data[3]");
+        }
+        Result::Err(_) => panic("expected from_slice with 6 elements to succeed"),
+    }
+}
+
+#[test]
+fn elementwise_add_and_scale_sum_over_static_tensors() {
+    let a = sample();
+    let mut data = slice_of_zeros<i64>(6);
+    for i in 0..6 {
+        data[i] = i * 10
+    }
+    match tensor::Tensor<i64, 2, 3>::from_slice(data, tensor::dims0()) {
+        Result::Ok(b) => {
+            let sum = a + &b;
+            test::assert_eq(sum.at(0), 0, "elementwise sum at offset 0");
+            test::assert_eq(sum.at(1), 15, "elementwise sum at offset 1");
+            test::assert_eq(sum.at(2), 20, "elementwise sum at offset 2");
+            test::assert_eq(sum.at(3), 30, "elementwise sum at offset 3");
+            test::assert_eq(sum.at(4), 40, "elementwise sum at offset 4");
+            test::assert_eq(sum.at(5), 57, "elementwise sum at offset 5");
+            test::assert_eq(b.scale(2).sum(), 300, "scaling by 2 then summing all elements");
+        }
+        Result::Err(_) => panic("expected from_slice with 6 elements to succeed"),
+    }
+}
+
+#[test]
+fn from_slice_with_the_wrong_length_fails_with_shape_error() {
+    match tensor::Tensor<i64, 2, 3>::from_slice(slice_of_zeros<i64>(5), tensor::dims0()) {
+        Result::Ok(_) => panic("expected from_slice with 5 elements to fail: 6 are required"),
+        Result::Err(e) => {
+            test::assert_eq(e.axis, -1, "a total-length mismatch has no single axis");
+            test::assert_eq(e.expected, 6, "a 2x3 tensor needs 6 elements");
+            test::assert_eq(e.found, 5, "the slice given had 5 elements");
+        }
+    }
+}

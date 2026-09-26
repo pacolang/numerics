@@ -1,0 +1,20 @@
+use tensor;
+use std::test;
+
+#[test]
+fn dyn_batch_tensor_dim_reads_the_real_extent_and_the_static_extent() {
+    match tensor::Tensor<f32, Dyn, 3>::zeros_with(tensor::dims1(5)) {
+        Result::Ok(x) => {
+            test::assert_eq(x.dim(0), 5, "dim 0 is Dyn: reads the real run-time extent");
+            test::assert_eq(x.dim(1), 3, "dim 1 is static: reads the extent from the type");
+        }
+        Result::Err(_) => panic("expected zeros_with(dims1(5)) to succeed"),
+    }
+}
+
+#[test]
+fn fully_static_tensor_dim_reads_both_extents_from_the_type() {
+    let a = tensor::Tensor<f32, 2, 3>::zeros();
+    test::assert_eq(a.dim(0), 2, "dim 0 of a Tensor<f32, 2, 3>");
+    test::assert_eq(a.dim(1), 3, "dim 1 of a Tensor<f32, 2, 3>");
+}

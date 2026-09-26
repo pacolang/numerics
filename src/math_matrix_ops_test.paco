@@ -1,0 +1,103 @@
+use math;
+use std::test;
+
+fn sample_a() -> math::Matrix<float, 2, 2> {
+    let mut a = math::Matrix<float, 2, 2>::zeros();
+    let a00: float = 1.0;
+    let a01: float = 2.0;
+    let a10: float = 3.0;
+    let a11: float = 4.0;
+    a.set(0, 0, a00);
+    a.set(0, 1, a01);
+    a.set(1, 0, a10);
+    a.set(1, 1, a11);
+    a
+}
+
+#[test]
+fn add_of_matching_shapes_is_elementwise() {
+    let a = sample_a();
+    let i = math::Matrix<float, 2, 2>::identity();
+    match a.add(&i) {
+        Result::Ok(sum) => {
+            let e00: float = 2.0;
+            let e11: float = 5.0;
+            test::assert_eq(sum.get(0, 0), e00, "1.0 + identity(0,0)");
+            test::assert_eq(sum.get(1, 1), e11, "4.0 + identity(1,1)");
+        }
+        Result::Err(_) => panic("expected add of matching shapes to succeed"),
+    }
+}
+
+#[test]
+fn sub_of_matching_shapes_is_elementwise() {
+    let a = sample_a();
+    let i = math::Matrix<float, 2, 2>::identity();
+    match a.sub(&i) {
+        Result::Ok(diff) => {
+            let e11: float = 3.0;
+            test::assert_eq(diff.get(1, 1), e11, "4.0 - identity(1,1)");
+        }
+        Result::Err(_) => panic("expected sub of matching shapes to succeed"),
+    }
+}
+
+#[test]
+fn mul_multiplies_matrices() {
+    let a = sample_a();
+    match a.mul(&a) {
+        Result::Ok(product) => {
+            let e00: float = 7.0;
+            let e01: float = 10.0;
+            let e10: float = 15.0;
+            let e11: float = 22.0;
+            test::assert_eq(product.get(0, 0), e00, "row 0, col 0 of [[1,2],[3,4]] * itself");
+            test::assert_eq(product.get(0, 1), e01, "row 0, col 1 of [[1,2],[3,4]] * itself");
+            test::assert_eq(product.get(1, 0), e10, "row 1, col 0 of [[1,2],[3,4]] * itself");
+            test::assert_eq(product.get(1, 1), e11, "row 1, col 1 of [[1,2],[3,4]] * itself");
+        }
+        Result::Err(_) => panic("expected mul of matching shapes to succeed"),
+    }
+}
+
+#[test]
+fn transpose_swaps_rows_and_columns() {
+    let a = sample_a();
+    let t = a.transpose();
+    let e01: float = 3.0;
+    test::assert_eq(t.get(0, 1), e01, "transpose(a)(0,1) is a(1,0)");
+}
+
+#[test]
+fn scale_multiplies_every_element() {
+    let a = sample_a();
+    let k: float = 0.5;
+    let e11: float = 2.0;
+    test::assert_eq(a.scale(k).get(1, 1), e11, "scaling by 0.5 halves each element");
+}
+
+#[test]
+fn non_square_matrix_transpose_swaps_shape_and_indices() {
+    let mut m = math::Matrix<i64, 2, 3>::zeros();
+    m.set(1, 2, 7);
+    let t = m.transpose();
+    test::assert_eq(t.get(2, 1), 7, "transpose(m)(2,1) is m(1,2)");
+    test::assert_eq(m.rows(), 2, "m has 2 rows");
+    test::assert_eq(m.cols(), 3, "m has 3 columns");
+    test::assert_eq(t.rows(), 3, "transpose(m) has 3 rows");
+    test::assert_eq(t.cols(), 2, "transpose(m) has 2 columns");
+}
+
+#[test]
+fn checked_add_of_mismatched_dyn_shapes_fails_with_shape_error() {
+    match math::Matrix<i64, Dyn, 2>::with_shape(1, 2) {
+        Result::Ok(a) => match math::Matrix<i64, Dyn, 2>::with_shape(2, 2) {
+            Result::Ok(b) => match a.checked_add(&b) {
+                Result::Ok(_) => panic("expected mismatched row counts to fail"),
+                Result::Err(e) => test::assert_eq(e.axis, 0, "the row axis is where the shapes disagree"),
+            },
+            Result::Err(_) => panic("expected with_shape(2, 2) to succeed"),
+        },
+        Result::Err(_) => panic("expected with_shape(1, 2) to succeed"),
+    }
+}

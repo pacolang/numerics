@@ -1,0 +1,59 @@
+// `std::autodiff::Differentiable`'s two items (`zero_tangent`, `move_by`),
+// exercised directly rather than through `autodiff::grad`: a compiler gap
+// in the generic derivative-dispatch pipeline (not this library's code —
+// see docs/spec.md) currently panics when a generic `Tensor`'s own methods
+// are called on a gradient `grad` itself produced, so the `#[derivative]`
+// registrations in tensor.paco cannot yet be exercised end to end here.
+// `zero_tangent`/`move_by` need no such dispatch and are fully covered.
+
+use tensor;
+use std::test;
+
+fn sample() -> tensor::Tensor<f32, 2, 2> {
+    let mut a = tensor::Tensor<f32, 2, 2>::zeros();
+    let one: f32 = 1.0;
+    let two: f32 = 2.0;
+    a.set_at(0, one);
+    a.set_at(3, two);
+    a
+}
+
+#[test]
+fn zero_tangent_is_the_same_shape_and_all_zero() {
+    let a = sample();
+    let z = a.zero_tangent();
+    test::assert_eq(z.len(), a.len(), "zero_tangent keeps the element count");
+    test::assert_eq(z.shape()[0], a.shape()[0], "zero_tangent keeps axis 0");
+    test::assert_eq(z.shape()[1], a.shape()[1], "zero_tangent keeps axis 1");
+    for i in 0..z.len() {
+        let zero: f32 = 0.0;
+        test::assert_eq(z.at(i), zero, "every element of a zero tangent is zero")
+    }
+}
+
+#[test]
+fn zero_tangent_over_a_dyn_batch_keeps_the_run_time_extent() {
+    match tensor::Tensor<f32, Dyn, 3>::zeros_with(tensor::dims1(2)) {
+        Result::Ok(a) => {
+            let z = a.zero_tangent();
+            test::assert_eq(z.dyn_dims().len(), 1, "the tangent keeps one Dyn dimension");
+            test::assert_eq(z.shape()[0], 2, "the tangent keeps the batch extent");
+            test::assert_eq(z.len(), 6, "the tangent keeps the element count");
+        }
+        Result::Err(_) => panic("expected zeros_with(dims1(2)) to succeed"),
+    }
+}
+
+#[test]
+fn move_by_adds_the_offset_elementwise_in_place() {
+    let mut a = sample();
+    let mut offset = tensor::Tensor<f32, 2, 2>::zeros();
+    let ten: f32 = 10.0;
+    offset.set_at(0, ten);
+    a.move_by(&offset);
+    let e0: f32 = 11.0;
+    let e3: f32 = 2.0;
+    test::assert_eq(a.at(0), e0, "1.0 moved by 10.0");
+    test::assert_eq(a.at(1), 0.0 as f32, "untouched element stays zero");
+    test::assert_eq(a.at(3), e3, "element with no matching offset entry is unchanged");
+}
